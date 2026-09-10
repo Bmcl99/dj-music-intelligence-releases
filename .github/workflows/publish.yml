@@ -1,0 +1,41 @@
+name: Publish DJ Music Intelligence release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish (for example 0.6.1)
+        required: true
+        type: string
+      source_run_id:
+        description: Successful build workflow run ID from the private source repository
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release bundle from source build
+        env:
+          GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
+          RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          mkdir -p release
+          gh run download "$RUN_ID" --repo Bmcl99/dj-music-intelligence --name "DJ-Music-Intelligence-v${{ inputs.version }}-Windows" --dir release
+
+      - name: Verify updater files
+        run: |
+          ls -lah release
+          test -f "release/DJ Music Intelligence Setup ${{ inputs.version }}.exe"
+          test -f "release/DJ Music Intelligence Setup ${{ inputs.version }}.exe.blockmap"
+          test -f "release/latest.yml"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" release/* --repo "${{ github.repository }}" --title "DJ Music Intelligence v${{ inputs.version }}" --notes "DJ Music Intelligence Windows release v${{ inputs.version }}" --latest
