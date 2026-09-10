@@ -11,9 +11,18 @@ on:
         description: Successful build workflow run ID from the private source repository
         required: true
         type: string
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/publish.yml'
 
 permissions:
   contents: write
+
+env:
+  VERSION: ${{ github.event.inputs.version || '0.6.1' }}
+  SOURCE_RUN_ID: ${{ github.event.inputs.source_run_id || '34442273043' }}
 
 jobs:
   publish:
@@ -22,20 +31,42 @@ jobs:
       - name: Download release bundle from source build
         env:
           GH_TOKEN: ${{ secrets.SOURCE_REPO_TOKEN }}
-          RUN_ID: ${{ inputs.source_run_id }}
         run: |
           mkdir -p release
-          gh run download "$RUN_ID" --repo Bmcl99/dj-music-intelligence --name "DJ-Music-Intelligence-v${{ inputs.version }}-Windows" --dir release
+          gh run download "$SOURCE_RUN_ID" --repo Bmcl99/dj-music-intelligence --name "DJ-Music-Intelligence-v$VERSION-Windows" --dir release
+
+      - name: Normalize updater asset names
+        run: |
+          mv "release/DJ Music Intelligence Setup $VERSION.exe" "release/DJ-Music-Intelligence-Setup-$VERSION.exe"
+          mv "release/DJ Music Intelligence Setup $VERSION.exe.blockmap" "release/DJ-Music-Intelligence-Setup-$VERSION.exe.blockmap"
 
       - name: Verify updater files
         run: |
           ls -lah release
-          test -f "release/DJ Music Intelligence Setup ${{ inputs.version }}.exe"
-          test -f "release/DJ Music Intelligence Setup ${{ inputs.version }}.exe.blockmap"
+          test -f "release/DJ-Music-Intelligence-Setup-$VERSION.exe"
+          test -f "release/DJ-Music-Intelligence-Setup-$VERSION.exe.blockmap"
           test -f "release/latest.yml"
+          grep -F "url: DJ-Music-Intelligence-Setup-$VERSION.exe" release/latest.yml
 
-      - name: Publish GitHub release
+      - name: Publish or repair GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ inputs.version }}" release/* --repo "${{ github.repository }}" --title "DJ Music Intelligence v${{ inputs.version }}" --notes "DJ Music Intelligence Windows release v${{ inputs.version }}" --latest
+          if gh release view "v$VERSION" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release delete-asset "v$VERSION" "DJ.Music.Intelligence.Setup.$VERSION.exe" --repo "${{ github.repository }}" --yes || true
+            gh release delete-asset "v$VERSION" "DJ.Music.Intelligence.Setup.$VERSION.exe.blockmap" --repo "${{ github.repository }}" --yes || true
+            gh release upload "v$VERSION" \
+              "release/DJ-Music-Intelligence-Setup-$VERSION.exe" \
+              "release/DJ-Music-Intelligence-Setup-$VERSION.exe.blockmap" \
+              "release/latest.yml" \
+              --repo "${{ github.repository }}" --clobber
+          else
+            gh release create "v$VERSION" \
+              "release/DJ-Music-Intelligence-Setup-$VERSION.exe" \
+              "release/DJ-Music-Intelligence-Setup-$VERSION.exe.blockmap" \
+              "release/latest.yml" \
+              --repo "${{ github.repository }}" \
+              --title "DJ Music Intelligence v$VERSION" \
+              --notes "DJ Music Intelligence Windows release v$VERSION" \
+              --latest
+          fi
